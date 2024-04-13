@@ -213,7 +213,7 @@ def update_topology(amber_model, amber_state, espaloma_model):
 
 
 
-def CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, _ff):
+def CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, _ff, net_model):
     """
     Update topology and use minimized amber posisitons for new positions. 
     This is to ensure that the RNA structures are properly read by `openff.topology.Molecule`.
@@ -246,7 +246,8 @@ def CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, _ff):
     t.atom_slice(indices).save_pdb('rna_espaloma.pdb')
 
     mol = Molecule.from_file('rna_espaloma.pdb', file_format='pdb')
-    generator = EspalomaTemplateGenerator(molecules=mol, forcefield='net.pt', reference_forcefield='openff_unconstrained-2.0.0', charge_method='nn')
+    template_generator_kwargs = {'reference_forcefield': 'openff_unconstrained-2.0.0', 'charge_method': 'nn'}
+    generator = EspalomaTemplateGenerator(molecules=mol, forcefield=net_model, template_generator_kwargs=template_generator_kwargs)
     #EspalomaTemplateGenerator.INSTALLED_FORCEFIELDS
 
     #ff = ForceField('amber/protein.ff14SB.xml', 'amber/tip3p_standard.xml', 'amber/tip3p_HFE_multivalent.xml')
@@ -321,10 +322,13 @@ def CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, _ff):
 
 @click.command()
 @click.option('--pdbfile', required=True, default='../../../crd/rna_noh.pdb', help='path to pdb used to load topology')
-@click.option('--water_model', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'opc3', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
+#@click.option('--water_model', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'opc3', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
+@click.option('--water_model', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
+@click.option('--net_model', required=True, help='path to espaloma model')
 def cli(**kwargs):
     inputfile = kwargs['pdbfile']
     water_model = kwargs['water_model']
+    net_model = kwargs['net_model']
 
     #
     # 3 point water model
@@ -338,13 +342,13 @@ def cli(**kwargs):
     elif water_model == 'spce':
         water_model='tip3p'
         _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/spce_standard.xml', 'amber/spce_HFE_multivalent.xml')  
-    elif water_model == 'opc3':
+    #elif water_model == 'opc3':
         # OPC3: Exclude residue U from ions/ionslm_126_opc3.xml. ValueError will raise because of same residue template name.
         #       (ValueError: Residue template U with the same override level 0 already exists.)
         #       `ionslm_126_opc3.xml` manually modified in
         #       /home/takabak/mambaforge/envs/openmmforcefields-dev/lib/python3.9/site-packages/openmmforcefields-0.11.0+64.gd78f2b8.dirty-py3.9.egg/openmmforcefields/ffxml/amber/ions
-        water_model='tip3p'
-        _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc3_standard.xml')
+        #water_model='tip3p'
+        #_ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc3_standard.xml')
     
     #
     # 4 point water model
@@ -357,13 +361,14 @@ def cli(**kwargs):
         _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/tip4pfb_standard.xml', 'amber/tip4pfb_HFE_multivalent.xml')
     elif water_model == 'opc':
         water_model='tip4pew'
-        _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc_standard.xml')
+        # Use a custom xml file. Original xml file contains Uranium (U) which conflicts with Uridine (U) residue.
+        _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', '/home/takabak/.ffxml/amber/opc_standard.xml')
 
     else:
         raise NameError("undefined water model")
 
     amber_model, amber_minpositions, amber_state = CreateAmberSystem(inputfile, _ff, water_model)
-    espaloma_model, espaloma_model_mapped = CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, _ff)
+    espaloma_model, espaloma_model_mapped = CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, _ff, net_model)
 
     # compare models
     logging.info("")
