@@ -18,6 +18,11 @@ from openmm.app import PDBFile
 from pdbfixer import PDBFixer
 from mdtraj.reporters import NetCDFReporter
 
+# Export version
+import openmmforcefields
+import openff.toolkit
+print(f"openmmforcefield: {openmmforcefields.__version__}")
+print(f"openff-toolkit: {openff.toolkit.__version__}")
 
 
 def create_position_restraint(position, restraint_atom_indices):
@@ -71,15 +76,13 @@ def export_xml(simulation, system):
 
 def run(**options):
     #print(options)
-    inputfile = options["inputfile"]
+    pdbfile = options["pdbfile"]
     output_prefix = options["output_prefix"]
-    rna_ff = options["rna_ff"]
+    water_model = options["water_model"]
     box_padding = 12.0 * angstrom
-    #salt_conc = 0.15 * molar
     salt_conc = 0.08 * molar
     nb_cutoff = 10 * angstrom
     hmass = 3.5 * amu
-    water_model='tip3p'
     timestep = 4 * femtoseconds    
     temperature = 300 * kelvin
     pressure = 1 * atmosphere
@@ -108,7 +111,7 @@ def run(**options):
     create system
     """
     # pdbfixer: fix structure if necessary
-    fixer = PDBFixer(filename=inputfile)
+    fixer = PDBFixer(filename=pdbfile)
     fixer.findMissingResidues()
     fixer.findNonstandardResidues()
     fixer.replaceNonstandardResidues()
@@ -117,11 +120,31 @@ def run(**options):
     fixer.addMissingHydrogens(7.0)  # default: 7
     PDBFile.writeFile(fixer.topology, fixer.positions, open('pdbfixer.pdb', 'w'))
 
-    # define force field
-    if rna_ff == "OL3":
+    # 3 point water model
+    if water_model == 'tip3p':
+        water_model='tip3p'
         ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/tip3p_standard.xml', 'amber/tip3p_HFE_multivalent.xml')
-    elif rna_ff == "YIL":
-        ff = ForceField('amber/RNA.YIL.xml', 'amber/protein.ff14SB.xml', 'amber/tip3p_standard.xml', 'amber/tip3p_HFE_multivalent.xml')
+    elif water_model == 'tip3pfb':
+        water_model='tip3p'
+        ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/tip3pfb_standard.xml', 'amber/tip3pfb_HFE_multivalent.xml')      
+    elif water_model == 'spce':
+        water_model='tip3p'
+        ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/spce_standard.xml', 'amber/spce_HFE_multivalent.xml')  
+    # https://github.com/openmm/openmmforcefields/issues/272
+    #elif water_model == 'opc3':
+    #    water_model='tip3p'
+    #    ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc3_standard.xml')
+    # 4 point water model
+    elif water_model == 'tip4pew':
+        water_model='tip4pew'
+        ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/tip4pew_standard.xml', 'amber/tip4pew_HFE_multivalent.xml')
+    elif water_model == 'tip4pfb':
+        water_model='tip4pew'
+        ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/tip4pfb_standard.xml', 'amber/tip4pfb_HFE_multivalent.xml')
+    elif water_model == 'opc':
+        water_model='tip4pew'
+        # Use a custom xml file. Original xml file contains Uranium (U) which conflicts with Uridine (U) residue.
+        ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', '/home/takabak/.ffxml/amber/opc_standard.xml')
 
     # solvate system
     modeller = Modeller(fixer.topology, fixer.positions)
@@ -133,7 +156,6 @@ def run(**options):
     integrator = LangevinMiddleIntegrator(temperature, 1/picosecond, timestep)
     simulation = Simulation(modeller.topology, system, integrator)
     simulation.context.setPositions(modeller.positions)
-
 
     # define reporter
     simulation.reporters.append(NetCDFReporter(os.path.join(output_prefix, 'traj.nc'), netcdf_frequency))
@@ -176,9 +198,10 @@ def run(**options):
 
 
 @click.command()
-@click.option('--inputfile', '-i', required=True, help='path to input pdb file')
-@click.option('--output_prefix', '-o', default=".", help='path to output files')
-@click.option('--rna_ff', '-ff', default="OL3", help='rna force field supported by openmmforcefields')
+@click.option('--pdbfile', required=True, help='path to input pdb file')
+@click.option('--output_prefix', default=".", help='path to output files')
+#@click.option('--water_model', '-w', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'opc3', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
+@click.option('--water_model', '-w', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
 def cli(**kwargs):
     run(**kwargs)
 

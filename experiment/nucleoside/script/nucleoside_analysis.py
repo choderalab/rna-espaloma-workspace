@@ -22,7 +22,6 @@ import warnings
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter, AutoMinorLocator
-#import seaborn as sns
 import barnaba as bb
 from barnaba import definitions
 from barnaba.nucleic import Nucleic
@@ -31,7 +30,6 @@ from barnaba.nucleic import Nucleic
 # =====================
 # DEFINE
 # =====================
-
 logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore")
 
@@ -60,62 +58,49 @@ UNIT_PS_TO_NS = 1/1000
 STRIDE = 10               # Only read every stride-th frame. Each frame is saved 100 ps.
 
 
-water_models = ["tip3p", "tip3pfb", "spce", "tip4pew", "tip4pfb", "opc"]
-#water_models = ["tip3p", "opc"]
-#water_models = ["tip3p"]
-
-
 def radian_to_degree(a):    
     a[np.where(a<0.0)] += 2.*np.pi
     a *= 180.0/np.pi
-
     # same as above
     #a = a*(180./np.pi)
     #a[np.where(a<0.0)] += 360
-    
     return a
 
 
-
 def load_data(water_model):
-    
-    # initial
-    init_pdb = os.path.join("../../prep", water_model, "espaloma_mapped_solvated.pdb")
-    init_traj = mdtraj.load(init_pdb)
+    """
+    """
+    try:
+        # espaloma
+        init_pdb = os.path.join("../../prep", water_model, "espaloma_mapped_solvated.pdb")
+        init_traj = mdtraj.load(init_pdb)
+    except:
+        # amber
+        init_pdb = os.path.join("../../eq", water_model, "solvated.pdb")
+        init_traj = mdtraj.load(init_pdb)
+
     # slice
     atom_indices = init_traj.topology.select('not (protein or water or symbol Na or symbol Cl)')
     init_traj = init_traj.atom_slice(atom_indices)
-
-
-    # minimized
-    #min_pdb = os.path.join("../../prep", water_model, "espaloma_mapped_min.pdb")
     
     # equilibration
-    ncfile = os.path.join("../../eq", water_model, "traj.nc")
-    eq_traj = mdtraj.load(ncfile, top=init_pdb, stride=1)
-    # slice
-    eq_traj = eq_traj.atom_slice(atom_indices)
+    #ncfile = os.path.join("../../eq", water_model, "traj.nc")
+    #eq_traj = mdtraj.load(ncfile, top=init_pdb, stride=1)
+    #eq_traj = eq_traj.atom_slice(atom_indices)
 
-    
     # production
     n = len(glob.glob("../{}/md*/traj.nc".format(water_model))) - 1   # minus 1 for md0
-    #n = 10
     ncfiles = [ os.path.join("..", water_model, "md" + str(i), "traj.nc") for i in range(1, n+1) ]
-    #traj = mdtraj.load(ncfiles, top=init_pdb, stride=STRIDE)
     traj = mdtraj.load(ncfiles, top=init_traj.topology, stride=STRIDE)
     
-    return init_pdb, init_traj, eq_traj, traj
+    return init_pdb, init_traj, traj
 
 
-# =========================
-# Pucker angle (wheel plot)
-# =========================
-def plot_wheel(PLOT_TITLE):
-    for i, water_model in enumerate(water_models):
-        #print(">analyze {}".format(water_model))
-        
-        init_pdb, init_traj, eq_traj, traj = load_data(water_model)
-
+def plot_sugar(title, water_models):
+    """ Generate wheel plot for pucker angles.
+    """
+    for water_model in water_models:
+        init_pdb, init_traj, traj = load_data(water_model)
         init_angles, res = bb.pucker_angles(init_pdb, topology=init_pdb)
         angles, res = bb.pucker_rao_traj(traj)
         angles = angles.reshape(angles.shape[0], angles.shape[-1])
@@ -149,35 +134,27 @@ def plot_wheel(PLOT_TITLE):
 
         plt.tight_layout()
         plt.show()
-        plt.savefig("{}_pucker_anlges_{}.png".format(PLOT_TITLE, water_model))
+        plt.savefig("{}_pucker_anlges_{}.png".format(title, water_model))
         plt.close()
 
 
-# ===================================
-# Chi angle trajectory and histrogram
-# ===================================
-def plot(PLOT_TITLE):
-    for i, water_model in enumerate(water_models):
-        #print(">analyze {}".format(water_model))
-        
-        init_pdb, init_traj, eq_traj, traj = load_data(water_model)
-        
+def plot_chi(title, water_models):
+    """ Generate histogram plot for chi angle distribution.
+    """
+    for water_model in water_models:
+        init_pdb, init_traj, traj = load_data(water_model)
         _angles, _res = bb.backbone_angles_traj(traj)
         angles_prod = radian_to_degree(_angles).reshape(_angles.shape[0], _angles.shape[-1])
 
         # get chi angles
         angles = angles_prod[:,-1]   # ['alpha', 'beta', 'gamma', 'delta', 'eps', 'zeta', 'chi']
         
-        # ====
-        # plot
-        # ====
         from matplotlib.gridspec import GridSpec
         fig = plt.figure(figsize=(12,12))
         gs = fig.add_gridspec(2, 2,  width_ratios=(3, 1), height_ratios=(1, 3),
                             left=0.1, right=0.9, bottom=0.1, top=0.9,
                             wspace=0.05, hspace=0.05)
 
-        # trajectory
         x = np.arange(len(angles))  # ns
         ax = fig.add_subplot(gs[0, 0])
         ax.scatter(x, angles, s=20)
@@ -188,8 +165,6 @@ def plot(PLOT_TITLE):
         ax.yaxis.set_ticks(np.arange(0, 361, 60))
         ax.tick_params(axis='both', labelsize=14)
 
-
-        # histogram 
         bins = np.arange(0, 361, 5)
         ax_hist = fig.add_subplot(gs[0, 1], sharey=ax)
         ax_hist.hist(angles, bins=bins, orientation = 'horizontal', density=True)
@@ -203,31 +178,24 @@ def plot(PLOT_TITLE):
         plt.setp(ax_hist.get_yticklabels(), visible=False)
         #ax_hist.annotate(water_model, xy=(0.7,0.9), xycoords='axes fraction',  size=16)
 
-
-        # =============
-        # save figure
-        # =============
         plt.tight_layout()
         plt.show()
-        plt.savefig("{}_chi_angle_{}.png".format(PLOT_TITLE, water_model))
+        plt.savefig("{}_chi_angle_{}.png".format(title, water_model))
         plt.close()
 
 
-# ============================================================
-# Compute anti/syn fraction, C3'-endo fraction, and J coupling
-# ============================================================
-def run(PLOT_TITLE):
+def to_csv(title, water_models):
+    """ Compute anti/syn fraction, C3'-endo fraction, and J coupling.
+    """
     result_dict = {}
-    for i, water_model in enumerate(water_models):
+    for water_model in water_models:
         print("# {}".format(water_model))
         print("-------------")
         
         # load data
-        init_pdb, init_traj, eq_traj, traj = load_data(water_model)
+        init_pdb, init_traj, traj = load_data(water_model)
         
-        # ==========
         # J coupling
-        # ==========
         couplings, rr = bb.jcouplings_traj(traj, couplings=["H1H2", "H2H3", "H3H4"])
         couplings = couplings.reshape(couplings.shape[0], couplings.shape[-1])
         
@@ -241,10 +209,8 @@ def run(PLOT_TITLE):
         print("J23: {:.2f}+-{:.2f}".format(j23, j23_std))
         print("J34: {:.2f}+-{:.2f}".format(j34, j34_std))
         
-        # ===========================
         # RNA backbone: Consensus all-angle conformers and modular string nomenclature (an RNA Ontology Consortium contribution), RNA, 2008
         # doi: 10.1261/rna.657708
-        # ===========================
         angles_b, rr = bb.backbone_angles_traj(traj, angles=["chi", "delta"])
         angles_b = radian_to_degree(angles_b)
 
@@ -269,9 +235,9 @@ def run(PLOT_TITLE):
         print("high_anti: {:.2f}".format(high_anti))
         print("not_syn_anti {:.2f}".format(not_syn_anti))
 
+        # C2, C3 endo population
         angles_p, rr = bb.pucker_rao_traj(traj)
         angles_p = radian_to_degree(angles_p)
-
         c3, c2, not_c2_c3 = 0, 0, 0
         for angle_b, angle_p in zip(angles_b, angles_p):
             delta = angle_b[0][1]
@@ -290,22 +256,9 @@ def run(PLOT_TITLE):
         print("c2: {:.2f}".format(c2))
         print("not_c2_c3: {:.2f}\n".format(not_c2_c3))
 
-        
-        
-        result_dict[water_model] = { "anti-all": anti + high_anti, "syn": syn, "anti": anti, "high-anti": high_anti, "non-syn-anti": not_syn_anti, \
-                                    "j12": j12, "j12_std": j12_std, "j12_err": j12_std/np.sqrt(len(couplings[:,0])), \
-                                    "j23": j23, "j23_std": j23_std, "j23_err": j23_std/np.sqrt(len(couplings[:,0])), \
-                                    "j34": j34, "j34_std": j34_std, "j34_err": j34_std/np.sqrt(len(couplings[:,0])), \
-                                    "c3": c3, "c2": c2, "non-c2-c3": not_c2_c3
-                                }
-
-
-
-        # =================
         # TWO END STATE MODEL
-        # =================
         #print("(TWO END STATE MODEL)")
-        #if PLOT_TITLE.upper().startswith("C") or PLOT_TITLE.upper().startswith("U"):
+        #if title.upper().startswith("C") or title.upper().startswith("U"):
         #    atom_indices = init_traj.topology.select("name H5 or name H6")   # H5 should be H1'
         #    atom_indices = atom_indices.reshape(1,2)
         #    d = mdtraj.compute_distances(traj, atom_indices) * UNIT_NM_TO_ANGSTROMS
@@ -322,22 +275,32 @@ def run(PLOT_TITLE):
         #print("C3'-endo: {:.2f}".format(c3))
         #print("C2'-endo: {:.2f}\n".format(c2))
 
-    # save
+        result_dict[water_model] = { "anti-all": anti + high_anti, "syn": syn, "anti": anti, "high-anti": high_anti, "non-syn-anti": not_syn_anti, \
+                                    "j12": j12, "j12_std": j12_std, "j12_err": j12_std/np.sqrt(len(couplings[:,0])), \
+                                    "j23": j23, "j23_std": j23_std, "j23_err": j23_std/np.sqrt(len(couplings[:,0])), \
+                                    "j34": j34, "j34_std": j34_std, "j34_err": j34_std/np.sqrt(len(couplings[:,0])), \
+                                    "c3": c3, "c2": c2, "non-c2-c3": not_c2_c3
+                                }
+    
+    # Export
     import pandas as pd
     df = pd.DataFrame.from_dict(result_dict)
-    df.to_csv('{}_summary.txt'.format(PLOT_TITLE), sep='\t', float_format='%.2f')
-
+    df.to_csv('{}_summary.txt'.format(title), sep='\t', float_format='%.2f')
 
 
 
 @click.command()
 @click.option('--title', required=True, help='title name')
+@click.option('--water_models', required=True, help='sequence of water models', type=str)
 def cli(**kwargs):
     print(kwargs)
-    PLOT_TITLE = kwargs["title"]
-    plot_wheel(PLOT_TITLE)
-    plot(PLOT_TITLE)
-    run(PLOT_TITLE)
+    title = kwargs["title"]
+    water_models = kwargs["water_models"]
+    water_models = [ str(_) for _ in water_models.split() ]
+
+    plot_sugar(title, water_models)
+    plot_chi(title, water_models)
+    to_csv(title, water_models)
 
 
 

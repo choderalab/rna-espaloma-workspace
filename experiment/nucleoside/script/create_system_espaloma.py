@@ -28,9 +28,7 @@ print(f"openmmforcefield: {openmmforcefields.__version__}")
 print(f"openff-toolkit: {openff.toolkit.__version__}")
 
 
-#
-# PAREMETERS and FORCE FIELD
-#
+# Setting
 box_padding = 12.0 * angstrom
 salt_conc = 0.08 * molar
 nb_cutoff = 10 * angstrom
@@ -253,25 +251,27 @@ def CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, water_mod
     t.atom_slice(indices).save_pdb('rna_espaloma.pdb')
 
     mol = Molecule.from_file('rna_espaloma.pdb', file_format='pdb')
-    generator = EspalomaTemplateGenerator(molecules=mol, forcefield=net_model, reference_forcefield='openff_unconstrained-2.0.0', charge_method='nn')
+    #generator = EspalomaTemplateGenerator(molecules=mol, forcefield=net_model, reference_forcefield='openff_unconstrained-2.0.0', charge_method='nn')
+    template_generator_kwargs = {'reference_forcefield': 'openff_unconstrained-2.0.0', 'charge_method': 'nn'}
+    generator = EspalomaTemplateGenerator(molecules=mol, forcefield=net_model, template_generator_kwargs=template_generator_kwargs)
     #EspalomaTemplateGenerator.INSTALLED_FORCEFIELDS
 
-    #ff = ForceField('amber/protein.ff14SB.xml', 'amber/tip3p_standard.xml', 'amber/tip3p_HFE_multivalent.xml')
-    #ff = copy.deepcopy(_ff)
     if water_model == 'tip3p':
         ff = ForceField('amber/tip3p_standard.xml', 'amber/tip3p_HFE_multivalent.xml')
     elif water_model == 'tip3pfb':
         ff = ForceField('amber/tip3pfb_standard.xml', 'amber/tip3pfb_HFE_multivalent.xml')      
     elif water_model == 'spce':
         ff = ForceField('amber/spce_standard.xml', 'amber/spce_HFE_multivalent.xml')  
-    elif water_model == 'opc3':
-        ff = ForceField('amber/opc3_standard.xml')
+    # https://github.com/openmm/openmmforcefields/issues/272
+    #elif water_model == 'opc3':
+    #    ff = ForceField('amber/opc3_standard.xml')
     elif water_model == 'tip4pew':
         ff = ForceField('amber/tip4pew_standard.xml', 'amber/tip4pew_HFE_multivalent.xml')
     elif water_model == 'tip4pfb':
         ff = ForceField('amber/tip4pfb_standard.xml', 'amber/tip4pfb_HFE_multivalent.xml')
     elif water_model == 'opc':
-        ff = ForceField('amber/opc_standard.xml')
+        # Use a custom xml file. Original xml file contains Uranium (U) which conflicts with Uridine (U) residue.
+        ff = ForceField('/home/takabak/.ffxml/amber/opc_standard.xml')
     else:
         raise NameError("undefined water model")
     ff.registerTemplateGenerator(generator.generator)
@@ -344,7 +344,8 @@ def CreateEspalomaSystem(amber_model, amber_minpositions, amber_state, water_mod
 
 @click.command()
 @click.option('--pdbfile', required=True, default='../../../crd/rna_noh.pdb', help='path to pdb used to load topology')
-@click.option('--water_model', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'opc3', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
+#@click.option('--water_model', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'opc3', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
+@click.option('--water_model', type=click.Choice(['tip3p', 'tip3pfb', 'spce', 'tip4pew', 'tip4pfb', 'opc']), help='water model')
 @click.option('--net_model', required=True, help='path to espaloma model')
 def cli(**kwargs):
     inputfile = kwargs['pdbfile']
@@ -363,13 +364,10 @@ def cli(**kwargs):
     elif water_model == 'spce':
         water_model='tip3p'
         _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/spce_standard.xml', 'amber/spce_HFE_multivalent.xml')  
-    elif water_model == 'opc3':
-        # OPC3: Exclude residue U from ions/ionslm_126_opc3.xml. ValueError will raise because of same residue template name.
-        #       (ValueError: Residue template U with the same override level 0 already exists.)
-        #       `ionslm_126_opc3.xml` manually modified in
-        #       /home/takabak/mambaforge/envs/openmmforcefields-dev/lib/python3.9/site-packages/openmmforcefields-0.11.0+64.gd78f2b8.dirty-py3.9.egg/openmmforcefields/ffxml/amber/ions
-        water_model='tip3p'
-        _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc3_standard.xml')
+    # https://github.com/openmm/openmmforcefields/issues/272
+    #elif water_model == 'opc3':
+    #    water_model='tip3p'
+    #    _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc3_standard.xml')
     
     #
     # 4 point water model
@@ -382,7 +380,8 @@ def cli(**kwargs):
         _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/tip4pfb_standard.xml', 'amber/tip4pfb_HFE_multivalent.xml')
     elif water_model == 'opc':
         water_model='tip4pew'
-        _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', 'amber/opc_standard.xml')
+        # Use a custom xml file. Original xml file contains Uranium (U) which conflicts with Uridine (U) residue.
+        _ff = ForceField('amber/RNA.OL3.xml', 'amber/protein.ff14SB.xml', '/home/takabak/.ffxml/amber/opc_standard.xml')
 
     else:
         raise NameError("undefined water model")
